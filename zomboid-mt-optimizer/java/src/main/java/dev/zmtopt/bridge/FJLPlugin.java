@@ -9,6 +9,7 @@ import dev.zmtopt.optimize.ChunkPrepWorker;
 import dev.zmtopt.optimize.SaveOffloadManager;
 import dev.zmtopt.optimize.ServerPerfMonitor;
 import dev.zmtopt.optimize.ZombieAIThrottler;
+import dev.zmtopt.optimize.ZombieAISharder;
 
 import java.nio.ByteBuffer;
 
@@ -36,6 +37,7 @@ public final class FJLPlugin {
     private static ServerPerfMonitor perfMonitor;
     private static ChunkIOPool chunkIOPool;
     private static ChunkReadWarmup chunkReadWarmup;
+    private static ZombieAISharder zombieAISharder;
 
     private FJLPlugin() {
     }
@@ -62,6 +64,7 @@ public final class FJLPlugin {
         perfMonitor = new ServerPerfMonitor(200);
 
         initChunkIO();
+        initZombieAISharder();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             if (chunkIOPool != null) {
@@ -103,6 +106,27 @@ public final class FJLPlugin {
     }
 
     /**
+     * Creates the frame-time distribution sharder for distant zombie AI.
+     * Configuration (JVM system properties):
+     * <ul>
+     *   <li>{@code zmtopt.zombieAI.enable} - "true" (default) or "false"</li>
+     *   <li>{@code zmtopt.zombieAI.shards} - shard count, default 4</li>
+     *   <li>{@code zmtopt.zombieAI.closeRadius} - close radius in tiles, default 15</li>
+     * </ul>
+     */
+    private static void initZombieAISharder() {
+        if (!Boolean.parseBoolean(System.getProperty("zmtopt.zombieAI.enable", "true"))) {
+            GameHooks.log("[ZMTOpt] zombie AI sharder disabled by system property.");
+            return;
+        }
+        int shards = Integer.getInteger("zmtopt.zombieAI.shards", 4);
+        int closeRadius = Integer.getInteger("zmtopt.zombieAI.closeRadius", 15);
+        zombieAISharder = new ZombieAISharder(shards, closeRadius);
+        GameHooks.log("[ZMTOpt] zombie AI sharder ready (shards=" + shards
+                + ", closeRadius=" + closeRadius + ").");
+    }
+
+    /**
      * Called once per server tick (must run on the game thread).
      *
      * @param currentTick server tick counter
@@ -114,6 +138,9 @@ public final class FJLPlugin {
         long tickStart = System.nanoTime();
         dispatcher.drain();
         scheduler.onTick(currentTick);
+        if (zombieAISharder != null) {
+            zombieAISharder.onTick(currentTick);
+        }
         if (chunkReadWarmup != null) {
             chunkReadWarmup.onTick(currentTick);
         }
@@ -177,6 +204,10 @@ public final class FJLPlugin {
 
     public static ChunkReadWarmup getChunkReadWarmup() {
         return chunkReadWarmup;
+    }
+
+    public static ZombieAISharder getZombieAISharder() {
+        return zombieAISharder;
     }
 
     /**

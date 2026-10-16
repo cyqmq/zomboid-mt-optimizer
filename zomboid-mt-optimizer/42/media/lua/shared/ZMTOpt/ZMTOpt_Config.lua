@@ -66,6 +66,19 @@ ZMTOpt.Config.EnableZombieThrottle = true
 ZMTOpt.Config.ZombieCloseRadiusTiles = 15 -- zombies within this radius always tick
 ZMTOpt.Config.ZombieFarIntervalTicks = 10  -- far zombies update every N ticks
 
+-- Zombie AI sharding (frame-time distribution, Java layer)
+-- Java layer reads these as JVM system properties:
+--   -Dzmtopt.zombieAI.enable=true
+--   -Dzmtopt.zombieAI.shards=4
+--   -Dzmtopt.zombieAI.closeRadius=15
+-- Distant zombies are divided into N shards; each tick only one shard's
+-- distant zombies get AI updates, smoothing per-tick load.
+ZMTOpt.Config.ZombieAISharder = {
+    Enable = true,   -- -Dzmtopt.zombieAI.enable
+    Shards = 4,      -- -Dzmtopt.zombieAI.shards
+    CloseRadius = 15,-- -Dzmtopt.zombieAI.closeRadius
+}
+
 -- ------------------------------------------------------------------
 -- Lua time-slicing (works WITHOUT the Java layer)
 -- Spreads heavy Lua work across ticks so no single tick stalls.

@@ -8,6 +8,7 @@
 - **客户端/单机端**：`IsoWorld.update` 每帧驱动优化层
 - **区块 I/O（借鉴 C2ME 思路）**：后台线程池预热区块文件到 OS 页缓存，降低流式加载磁盘延迟
 - **异步区块存档（C2ME 式多线程）**：`IsoChunk.SafeWrite` 磁盘写从主线程卸载到 I/O 线程池，消除存档卡顿
+- **僵尸 AI 分片调度（帧时间分配）**：远处僵尸按 id 分片，每 tick 只更新一片，平滑 AI 负载
 - **单端口优化**：字节码注入强制 `udpPort = port`，服务端两个 UDP 端口（16261+16262）合并为一个
 
 **不依赖任何闭源加载器（FJL/ZombieBuddy）**。
@@ -186,6 +187,16 @@ PZ 专用服务器默认使用两个 UDP 端口：`16261`（Steam 连接）和 `
 
 > ⚠️ 实验性功能：会改变存档写入时序。**启用前务必备份存档**，先在小规模服务器验证。
 
+### 僵尸 AI 分片调度（JVM 系统属性）
+
+把远处僵尸的 AI 更新按 id 分成 N 片，每 tick 只更新一片（帧时间分配，类似 Tempo 思路）。近距离僵尸每 tick 模拟：
+
+```
+-Dzmtopt.zombieAI.enable=true
+-Dzmtopt.zombieAI.shards=4
+-Dzmtopt.zombieAI.closeRadius=15
+```
+
 ### 区块 I/O 配置（JVM 系统属性）
 
 Java 层无法直接读 Lua 配置，区块 I/O 参数通过 `-D` 系统属性设置（加在 `-javaagent` 同一行）：
@@ -233,6 +244,7 @@ ZMTOpt.Config.LuaSlicePerTick = 4
 - ✅ **区块 I/O 初始化**：`ChunkIOPool`/`ChunkReadWarmup` 创建成功，反射不可用时优雅降级
 - ✅ **单端口注入测试**：`-Dzmtopt.singlePort.enable=true` 下 `UdpEngine` 的 `udpPort` 被强制为 `port`（16262→16261）
 - ✅ **异步存档测试**：`-Dzmtopt.asyncSave.enable=true` 下 `IsoChunk.SafeWrite` 从主线程卸载到 `ZMTOpt-ChunkIO-worker` 线程执行，主线程立即返回，ThreadLocal 防递归生效
+- ✅ **僵尸 AI 分片测试**：8 只远处僵尸 / 4 片 → 每 tick 恰好 2 只更新（负载均衡），近处僵尸每 tick 模拟，4 tick 内全部远处僵尸得到更新
 - ✅ **真实专用服务器验证**（SteamCMD 匿名下载 App 380870，Build 42.21.0）：
   - agent `premain` 正常加载、插件初始化、区块 I/O 模块就绪
   - `[ZMTOpt] hooking zombie/iso/IsoWorld#update()V` —— 真实 Java 25 类文件注入成功（ASM 9.11）
