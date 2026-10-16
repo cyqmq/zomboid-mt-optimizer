@@ -125,6 +125,12 @@ Lua-side settings mirror these in `42/media/lua/shared/ZMTOpt/ZMTOpt_Config.lua`
   - `single-port: forcing udpPort=port` — real `UdpEngine` injected
   - `*** SERVER STARTED ****` + `server is listening on port 16261` — **only one port bound** (verified in `/proc/net/udp`)
 
+## Known limitations (verified on a real dedicated server)
+
+- ✅ Single-port / dual-end hooks / async save all inject successfully on the dedicated server (Build 42.21.0).
+- ⚠️ **Zombie AI shard-skip (`IsoZombie.update` injection) applies to client / single-player only.** On a dedicated server, the zombie simulation does NOT go through the Java class loader - the outer `zombie.characters.IsoZombie` class never reaches the transformer (even after a successful `createhorde`). Server zombies are likely managed by a native/virtual layer. The hook works in single-player where `IsoZombie` is loaded normally.
+- Server-side zombie AI parallelization would need to target the native simulation layer (`VirtualZombieManager`/`ZombiePopulationManager`) - a deeper engine-level effort.
+
 ## Needs verification on your machine
 
 1. Full gameplay with all optimizations enabled (≥6 GB RAM recommended for B42)

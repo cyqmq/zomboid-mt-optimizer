@@ -261,6 +261,12 @@ ZMTOpt.Config.LuaSlicePerTick = 4
   - `[ZMTOpt] single-port: forcing udpPort=port in zombie/core/raknet/UdpEngine` —— 单端口注入成功
   - `*** SERVER STARTED ****` + `server is listening on port 16261` —— **仅监听一个端口**（`/proc/net/udp` 确认无 16262）
 
+## 已知边界（真实服务器实测结论）
+
+- ✅ **单端口 / 双端钩子 / 异步存档** 在专用服务器上均注入成功（Build 42.21.0 实测）。
+- ⚠️ **僵尸 AI 分片跳过（`IsoZombie.update` 注入）适用于客户端/单机端**：实测专用服务器的僵尸模拟**不走 Java 类加载**（`zombie.characters.IsoZombie` 外层类从未经过 transformer，即使 `createhorde` 成功生成僵尸——服务器僵尸可能由 native/虚拟层管理）。因此该钩子在专用服务器上不会触发，但在单机/客户端（`IsoWorld.update` 驱动、`IsoZombie` 正常加载）可用。
+- 若要服务端僵尸 AI 并行化，需要进入服务器 native 模拟层（`VirtualZombieManager`/`ZombiePopulationManager`），属于更深层的引擎级工程。
+
 ## 待你在真实环境验证
 
 1. ✅ **钩子类名/方法名**——已用反编译源码 + 真实服务器 jar（42.21.0）双重核实
