@@ -3,7 +3,11 @@ package dev.zmtopt.agent;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+
+import dev.zmtopt.bridge.FJLPlugin;
+import dev.zmtopt.optimize.ZombieAISharder;
 
 /**
  * Java agent entry point - the fully open-source replacement for
@@ -42,6 +46,13 @@ public final class ZMTOptAgent {
     // Zombie AI hook diagnostic (config-gated scaffold).
     private static final AtomicLong zombieUpdateCount = new AtomicLong();
     private static volatile boolean zombieAIHookEnabled = false;
+    private static volatile boolean zombieAISkipEnabled = false;
+
+    // Reflection handles for player positions (used by shard-skip).
+    private static volatile boolean playerReflectionAttempted = false;
+    private static volatile Method getPlayersMethod;
+    private static volatile Method getPlayerXMethod;
+    private static volatile Method getPlayerYMethod;
 
     private ZMTOptAgent() {
     }
@@ -50,7 +61,8 @@ public final class ZMTOptAgent {
         System.out.println("[ZMTOpt] javaagent premain (args=" + agentArgs + ")");
         asyncSaveEnabled = Boolean.getBoolean("zmtopt.asyncSave.enable");
         zombieAIHookEnabled = Boolean.getBoolean("zmtopt.zombieAI.hook");
-        inst.addTransformer(new ZMTOptTransformer(agentArgs, asyncSaveEnabled, zombieAIHookEnabled));
+        zombieAISkipEnabled = Boolean.getBoolean("zmtopt.zombieAI.skip");
+        inst.addTransformer(new ZMTOptTransformer(agentArgs, asyncSaveEnabled, zombieAIHookEnabled, zombieAISkipEnabled));
         initPlugin();
     }
 
@@ -186,5 +198,86 @@ public final class ZMTOptAgent {
 
     public static long getZombieUpdateCount() {
         return zombieUpdateCount.get();
+    }
+
+    public static void setZombieAISkipEnabled(boolean enabled) {
+        zombieAISkipEnabled = enabled;
+    }
+
+    public static boolean isZombieAISkipEnabled() {
+        return zombieAISkipEnabled;
+    }
+
+    /**
+     * Called from the injected {@code IsoZombie.update} entry when
+     * {@code -Dzmtopt.zombieAI.skip=true}. Returns true when this zombie's AI
+     * update should be SKIPPED this tick (frame-time distribution):
+     * <ul>
+     *   <li>close zombies (within the configured radius) are never skipped;</li>
+     *   <li>distant zombies are updated only when their shard is active.</li>
+     * </ul>
+     * Distance is computed against the nearest player via reflection.
+     *
+     * @param zombieId stable zombie id (from {@code IsoMovingObject.getID()})
+     * @param x       zombie tile x coordinate
+     * @param y       zombie tile y coordinate
+     * @return true if the update should be skipped
+     */
+    public static boolean shouldSkipZombieUpdate(int zombieId, float x, float y) {
+        if (!zombieAISkipEnabled) {
+            return false;
+        }
+        ZombieAISharder sharder = FJLPlugin.getZombieAISharder();
+        if (sharder == null) {
+            return false;
+        }
+        float distance = distanceToNearestPlayer(x, y);
+        int distanceTiles = distance >= Float.MAX_VALUE ? Integer.MAX_VALUE : Math.round(distance);
+        return !sharder.shouldTick(zombieId, distanceTiles);
+    }
+
+    private static float distanceToNearestPlayer(float x, float y) {
+        ensurePlayerReflection();
+        if (getPlayersMethod == null) {
+            return Float.MAX_VALUE;
+        }
+        try {
+            Object playersObj = getPlayersMethod.invoke(null);
+            if (playersObj instanceof List<?> players) {
+                float best = Float.MAX_VALUE;
+                for (Object player : players) {
+                    if (player == null) {
+                        continue;
+                    }
+                    float px = ((Number) getPlayerXMethod.invoke(player)).floatValue();
+                    float py = ((Number) getPlayerYMethod.invoke(player)).floatValue();
+                    float dx = px - x;
+                    float dy = py - y;
+                    float dist = (float) Math.sqrt(dx * dx + dy * dy);
+                    if (dist < best) {
+                        best = dist;
+                    }
+                }
+                return best;
+            }
+        } catch (Throwable t) {
+            // Game API changed; degrade to "all distant".
+        }
+        return Float.MAX_VALUE;
+    }
+
+    private static void ensurePlayerReflection() {
+        if (playerReflectionAttempted) {
+            return;
+        }
+        playerReflectionAttempted = true;
+        try {
+            Class<?> cls = Class.forName("zombie.characters.IsoPlayer");
+            getPlayersMethod = cls.getMethod("getPlayers");
+            getPlayerXMethod = cls.getMethod("getX");
+            getPlayerYMethod = cls.getMethod("getY");
+        } catch (Throwable t) {
+            System.err.println("[ZMTOpt] player reflection unavailable: " + t);
+        }
     }
 }

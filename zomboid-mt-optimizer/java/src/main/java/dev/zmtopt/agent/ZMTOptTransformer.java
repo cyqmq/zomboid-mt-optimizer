@@ -43,6 +43,7 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
     private final Set<String> watchClasses = new LinkedHashSet<>();
     private final boolean asyncSaveEnabled;
     private final boolean zombieAIHookEnabled;
+    private final boolean zombieAISkipEnabled;
     private volatile boolean gameClassesNotified = false;
 
     /**
@@ -54,9 +55,10 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
      */
     private final boolean singlePortEnabled;
 
-    public ZMTOptTransformer(String args, boolean asyncSaveEnabled, boolean zombieAIHookEnabled) {
+    public ZMTOptTransformer(String args, boolean asyncSaveEnabled, boolean zombieAIHookEnabled, boolean zombieAISkipEnabled) {
         this.asyncSaveEnabled = asyncSaveEnabled;
         this.zombieAIHookEnabled = zombieAIHookEnabled;
+        this.zombieAISkipEnabled = zombieAISkipEnabled;
         this.singlePortEnabled = Boolean.getBoolean("zmtopt.singlePort.enable");
         parseArgs(args);
         if (hooks.isEmpty()) {
@@ -101,9 +103,11 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
                 return null;
             }
         }
-        if (zombieAIHookEnabled && "zombie/characters/IsoZombie".equals(className)) {
+        if ((zombieAIHookEnabled || zombieAISkipEnabled) && "zombie/characters/IsoZombie".equals(className)) {
             try {
-                return instrumentZombieAIDiagnostic(classfileBuffer, className);
+                return zombieAISkipEnabled
+                        ? instrumentZombieAISkip(classfileBuffer, className)
+                        : instrumentZombieAIDiagnostic(classfileBuffer, className);
             } catch (Throwable t) {
                 System.err.println("[ZMTOpt] zombie-AI instrumentation failed for " + className + ": " + t);
                 return null;
@@ -238,6 +242,59 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
                         super.visitCode();
                         visitMethodInsn(Opcodes.INVOKESTATIC, AGENT_INTERNAL,
                                 "onZombieUpdateTick", "()V", false);
+                    }
+                };
+            }
+        };
+        reader.accept(visitor, ClassReader.SKIP_FRAMES);
+        return writer.toByteArray();
+    }
+
+    /**
+     * Injects actual frame-time-distribution skip logic into
+     * {@code IsoZombie.update} (when {@code -Dzmtopt.zombieAI.skip=true}):
+     * <pre>
+     *   int id = this.getID();
+     *   float x = this.getX();
+     *   float y = this.getY();
+     *   if (ZMTOptAgent.shouldSkipZombieUpdate(id, x, y)) return;
+     * </pre>
+     * The methods are declared on {@code zombie/iso/IsoMovingObject}, which
+     * {@code IsoZombie} inherits from.
+     */
+    private byte[] instrumentZombieAISkip(byte[] classfileBuffer, String className) {
+        ClassReader reader = new ClassReader(classfileBuffer);
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
+        ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
+                if (!"update".equals(name)
+                        || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_STATIC | Opcodes.ACC_NATIVE)) != 0) {
+                    return mv;
+                }
+                System.out.println("[ZMTOpt] zombie-AI skip hooking " + className + "#update" + descriptor);
+                return new MethodVisitor(Opcodes.ASM9, mv) {
+                    @Override
+                    public void visitCode() {
+                        super.visitCode();
+                        Label continueUpdate = new Label();
+                        // int id = this.getID()
+                        visitVarInsn(Opcodes.ALOAD, 0);
+                        visitMethodInsn(Opcodes.INVOKEVIRTUAL, "zombie/iso/IsoMovingObject", "getID", "()I", false);
+                        // float x = this.getX()
+                        visitVarInsn(Opcodes.ALOAD, 0);
+                        visitMethodInsn(Opcodes.INVOKEVIRTUAL, "zombie/iso/IsoMovingObject", "getX", "()F", false);
+                        // float y = this.getY()
+                        visitVarInsn(Opcodes.ALOAD, 0);
+                        visitMethodInsn(Opcodes.INVOKEVIRTUAL, "zombie/iso/IsoMovingObject", "getY", "()F", false);
+                        // if (!shouldSkipZombieUpdate(id, x, y)) continue
+                        visitMethodInsn(Opcodes.INVOKESTATIC, AGENT_INTERNAL,
+                                "shouldSkipZombieUpdate", "(IFF)Z", false);
+                        visitJumpInsn(Opcodes.IFEQ, continueUpdate);
+                        visitInsn(Opcodes.RETURN);
+                        visitLabel(continueUpdate);
                     }
                 };
             }

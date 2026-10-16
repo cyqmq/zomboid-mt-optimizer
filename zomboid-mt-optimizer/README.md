@@ -10,8 +10,10 @@
 - **区块字节缓存**：后台预读区块文件原始字节到 JVM 堆内缓存（LRU 有界），供加载器直接消费
 - **异步区块存档（C2ME 式多线程）**：`IsoChunk.SafeWrite` 磁盘写从主线程卸载到 I/O 线程池，消除存档卡顿
 - **僵尸 AI 分片调度（帧时间分配）**：远处僵尸按 id 分片，每 tick 只更新一片，平滑 AI 负载
+- **僵尸 AI 分片跳过（真机注入）**：`-Dzmtopt.zombieAI.skip=true` 时在 `IsoZombie.update` 入口注入跳过逻辑，远处僵尸只在所属分片激活时更新
 - **僵尸 AI 钩子脚手架**：可选的 `IsoZombie.update` 诊断计数注入（默认关，行为不变）
 - **单端口优化**：字节码注入强制 `udpPort = port`，服务端两个 UDP 端口（16261+16262）合并为一个
+- **GitHub Actions CI**：推送自动跑 JUnit 测试 + 构建 agent jar
 
 **不依赖任何闭源加载器（FJL/ZombieBuddy）**。
 
@@ -197,6 +199,7 @@ PZ 专用服务器默认使用两个 UDP 端口：`16261`（Steam 连接）和 `
 -Dzmtopt.zombieAI.enable=true
 -Dzmtopt.zombieAI.shards=4
 -Dzmtopt.zombieAI.closeRadius=15
+-Dzmtopt.zombieAI.skip=true   # 实验性：真正跳过非本片远处僵尸的 AI 更新
 ```
 
 ### 区块 I/O 配置（JVM 系统属性）
@@ -248,6 +251,8 @@ ZMTOpt.Config.LuaSlicePerTick = 4
 - ✅ **异步存档测试**：`-Dzmtopt.asyncSave.enable=true` 下 `IsoChunk.SafeWrite` 从主线程卸载到 `ZMTOpt-ChunkIO-worker` 线程执行，主线程立即返回，ThreadLocal 防递归生效
 - ✅ **僵尸 AI 分片测试**：8 只远处僵尸 / 4 片 → 每 tick 恰好 2 只更新（负载均衡），近处僵尸每 tick 模拟，4 tick 内全部远处僵尸得到更新
 - ✅ **JUnit 测试套件**：覆盖线程池优先级、主线程分发、Tick 调度、存档卸载、僵尸节流/分片、I/O 池背压、区块字节缓存、性能监控
+- ✅ **僵尸 AI 分片跳过字节码注入测试**：`-Dzmtopt.zombieAI.skip=true` 下 8 只僵尸 / 4 片 → 每 tick 恰好 2 只执行 `update()`，其余被注入的跳过逻辑拦截
+- ✅ **GitHub Actions CI**：`.github/workflows/ci.yml` 自动构建 + 测试
 - ✅ **真实专用服务器完整启动**（SteamCMD 匿名下载 App 380870，Build 42.21.0，**3g 堆**）：
   - agent `premain` 加载、插件初始化、区块 I/O + 僵尸分片就绪
   - `[ZMTOpt] hooking zombie/iso/IsoWorld#update()V` —— 客户端钩子注入成功

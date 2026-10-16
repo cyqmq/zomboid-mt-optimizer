@@ -76,11 +76,14 @@ ZMTOpt.Config.ZombieFarIntervalTicks = 10  -- far zombies update every N ticks
 -- distant zombies get AI updates, smoothing per-tick load.
 -- Diagnostic hook (experimental, no behavior change):
 --   -Dzmtopt.zombieAI.hook=true   injects a counter into IsoZombie.update
+-- Shard-skip (experimental, real frame-time distribution):
+--   -Dzmtopt.zombieAI.skip=true   skips out-of-shard distant zombie updates
 ZMTOpt.Config.ZombieAISharder = {
     Enable = true,   -- -Dzmtopt.zombieAI.enable
     Shards = 4,    -- -Dzmtopt.zombieAI.shards
     CloseRadius = 15,-- -Dzmtopt.zombieAI.closeRadius
     HookEnable = false, -- -Dzmtopt.zombieAI.hook (experimental diagnostic)
+    SkipEnable = false, -- -Dzmtopt.zombieAI.skip (experimental shard-skip)
 }
 
 -- ------------------------------------------------------------------
