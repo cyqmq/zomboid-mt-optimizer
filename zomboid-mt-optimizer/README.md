@@ -7,8 +7,10 @@
 - **服务端**：存档序列化、僵尸 AI 更新等重活从主模拟线程卸载到后台线程池
 - **客户端/单机端**：`IsoWorld.update` 每帧驱动优化层
 - **区块 I/O（借鉴 C2ME 思路）**：后台线程池预热区块文件到 OS 页缓存，降低流式加载磁盘延迟
+- **区块字节缓存**：后台预读区块文件原始字节到 JVM 堆内缓存（LRU 有界），供加载器直接消费
 - **异步区块存档（C2ME 式多线程）**：`IsoChunk.SafeWrite` 磁盘写从主线程卸载到 I/O 线程池，消除存档卡顿
 - **僵尸 AI 分片调度（帧时间分配）**：远处僵尸按 id 分片，每 tick 只更新一片，平滑 AI 负载
+- **僵尸 AI 钩子脚手架**：可选的 `IsoZombie.update` 诊断计数注入（默认关，行为不变）
 - **单端口优化**：字节码注入强制 `udpPort = port`，服务端两个 UDP 端口（16261+16262）合并为一个
 
 **不依赖任何闭源加载器（FJL/ZombieBuddy）**。
@@ -245,21 +247,25 @@ ZMTOpt.Config.LuaSlicePerTick = 4
 - ✅ **单端口注入测试**：`-Dzmtopt.singlePort.enable=true` 下 `UdpEngine` 的 `udpPort` 被强制为 `port`（16262→16261）
 - ✅ **异步存档测试**：`-Dzmtopt.asyncSave.enable=true` 下 `IsoChunk.SafeWrite` 从主线程卸载到 `ZMTOpt-ChunkIO-worker` 线程执行，主线程立即返回，ThreadLocal 防递归生效
 - ✅ **僵尸 AI 分片测试**：8 只远处僵尸 / 4 片 → 每 tick 恰好 2 只更新（负载均衡），近处僵尸每 tick 模拟，4 tick 内全部远处僵尸得到更新
-- ✅ **真实专用服务器验证**（SteamCMD 匿名下载 App 380870，Build 42.21.0）：
-  - agent `premain` 正常加载、插件初始化、区块 I/O 模块就绪
-  - `[ZMTOpt] hooking zombie/iso/IsoWorld#update()V` —— 真实 Java 25 类文件注入成功（ASM 9.11）
-  - `[ZMTOpt] hooking zombie/network/ServerMap#preupdate()V` —— 真实服务端主循环注入成功
-  - `[ZMTOpt] single-port: forcing udpPort=port in zombie/core/raknet/UdpEngine` —— 真实网络类注入成功
-  - 服务器完整启动被**环境内存**（B42 需 ~6GB，本机仅 ~237MB 可用）阻止，非 mod 问题
+- ✅ **JUnit 测试套件**：覆盖线程池优先级、主线程分发、Tick 调度、存档卸载、僵尸节流/分片、I/O 池背压、区块字节缓存、性能监控
+- ✅ **真实专用服务器完整启动**（SteamCMD 匿名下载 App 380870，Build 42.21.0，**3g 堆**）：
+  - agent `premain` 加载、插件初始化、区块 I/O + 僵尸分片就绪
+  - `[ZMTOpt] hooking zombie/iso/IsoWorld#update()V` —— 客户端钩子注入成功
+  - `[ZMTOpt] async-save: hooking zombie/iso/IsoChunk#SafeWrite` —— 异步存档真实类注入成功
+  - `[ZMTOpt] hooking zombie/network/ServerMap#preupdate()V` —— 服务端钩子注入成功
+  - `[ZMTOpt] single-port: forcing udpPort=port in zombie/core/raknet/UdpEngine` —— 单端口注入成功
+  - `*** SERVER STARTED ****` + `server is listening on port 16261` —— **仅监听一个端口**（`/proc/net/udp` 确认无 16262）
 
 ## 待你在真实环境验证
 
 1. ✅ **钩子类名/方法名**——已用反编译源码 + 真实服务器 jar（42.21.0）双重核实
-2. ✅ **agent 字节码注入**——已在真实服务器进程上验证 `IsoWorld`/`ServerMap`/`UdpEngine` 三个类均注入成功
-3. **服务器完整运行**——本环境内存不足（B42 需 ~6GB），在你的机器上跑通 `SERVER STARTED` 后观察 `onGameTick` 是否驱动优化层（日志出现 `TICK` 相关输出）
+2. ✅ **agent 字节码注入 + 完整启动**——已在本环境用 3g 堆真实跑通 `SERVER STARTED`，单端口生效
+3. **长时间运行稳定性**——挂机数小时观察存档/区块/僵尸优化是否稳定（`zmtopt.asyncSave.enable` 实验性功能尤其需要小规模验证）
 4. **`-Dzmtopt.chunkIO.chunkSize` 实际值**——PZ 地图区块尺寸需按你的世界确认（默认 300 为常用值，错了只是预热文件不对，无副作用）
-5. **存档序列化/区块准备的实际游戏 API**（`SaveOffloadManager`/`ChunkPrepWorker` 通过 `ChunkDataProvider` 桥接，需要你按反编译源码实现具体的数据拷贝逻辑）
+5. **僵尸 AI 诊断钩子 → 真正跳过分片外更新**——先在真机开 `-Dzmtopt.zombieAI.hook=true` 确认计数，再扩展为跳过逻辑
 6. **核心模拟的真正跨核并行**（当前做主线程辅助任务卸载 + I/O 预热；僵尸模拟/区块生成的深度并行化需更深的线程安全补丁工程）
+
+> 💡 **关于内存**：本环境有 virtio-balloon（内存气球），`free` 显示的可用于内存是动态的——实测在压力下可分配 3GB+（气球会"放气"）。所以完整启动服务器用 `-Xmx3g` 即可，不必按 `free` 的 available 估算。
 
 ---
 

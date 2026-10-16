@@ -41,9 +41,6 @@ public final class TickScheduler {
     public void onTick(long currentTick) {
         for (Map.Entry<Integer, List<ScheduledTask>> entry : tasksByInterval.entrySet()) {
             int interval = entry.getKey();
-            if (currentTick % interval != 0) {
-                continue;
-            }
             for (ScheduledTask task : entry.getValue()) {
                 if (currentTick % interval == task.phase) {
                     dispatcher.post(task.task);

@@ -10,17 +10,25 @@ repositories {
 }
 
 dependencies {
-    // The mod deliberately has ZERO external dependencies for the core.
-    // Game classes (zombie.*) are accessed via reflection so this project
-    // compiles without the Project Zomboid game jar.
-    // To verify against the real game, add the game jar as compileOnly:
-    //   compileOnly(files("libs/projectzomboid.jar"))
     //
     // ASM 9.11 is used ONLY by the javaagent (bytecode hooks) and is bundled
     // into the agent jar so the agent has no external runtime dependency.
     // 9.11 is required: the game ships with JRE 25 and its classes use
     // class file major version 69, which older ASM versions cannot read.
     implementation("org.ow2.asm:asm:9.11")
+
+    // Test framework
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+        showStandardStreams = true
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
 
 tasks.jar {
@@ -54,6 +62,9 @@ val agentJar = tasks.register<Jar>("agentJar") {
 sourceSets {
     main {
         java.setSrcDirs(listOf("java/src/main/java"))
+    }
+    test {
+        java.setSrcDirs(listOf("java/src/test/java"))
     }
 }
 

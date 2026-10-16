@@ -4,6 +4,7 @@ import dev.zmtopt.core.MTThreadPool;
 import dev.zmtopt.core.MainThreadDispatcher;
 import dev.zmtopt.core.TickScheduler;
 import dev.zmtopt.optimize.ChunkIOPool;
+import dev.zmtopt.optimize.ChunkReadCache;
 import dev.zmtopt.optimize.ChunkReadWarmup;
 import dev.zmtopt.optimize.ChunkPrepWorker;
 import dev.zmtopt.optimize.SaveOffloadManager;
@@ -37,6 +38,7 @@ public final class FJLPlugin {
     private static ServerPerfMonitor perfMonitor;
     private static ChunkIOPool chunkIOPool;
     private static ChunkReadWarmup chunkReadWarmup;
+    private static ChunkReadCache chunkReadCache;
     private static ZombieAISharder zombieAISharder;
 
     private FJLPlugin() {
@@ -101,6 +103,7 @@ public final class FJLPlugin {
 
         chunkIOPool = new ChunkIOPool(threads, maxPending);
         chunkReadWarmup = new ChunkReadWarmup(chunkIOPool, radius, chunkSize, interval);
+        chunkReadCache = new ChunkReadCache(chunkIOPool, 256);
         GameHooks.log("[ZMTOpt] chunk I/O optimizer ready (threads=" + threads
                 + ", radius=" + radius + ", chunkSize=" + chunkSize + ").");
     }
@@ -204,6 +207,10 @@ public final class FJLPlugin {
 
     public static ChunkReadWarmup getChunkReadWarmup() {
         return chunkReadWarmup;
+    }
+
+    public static ChunkReadCache getChunkReadCache() {
+        return chunkReadCache;
     }
 
     public static ZombieAISharder getZombieAISharder() {

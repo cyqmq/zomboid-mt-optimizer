@@ -3,6 +3,7 @@ package dev.zmtopt.agent;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Java agent entry point - the fully open-source replacement for
@@ -38,13 +39,18 @@ public final class ZMTOptAgent {
     private static volatile boolean asyncSaveEnabled = false;
     private static volatile Method originalSafeWrite;
 
+    // Zombie AI hook diagnostic (config-gated scaffold).
+    private static final AtomicLong zombieUpdateCount = new AtomicLong();
+    private static volatile boolean zombieAIHookEnabled = false;
+
     private ZMTOptAgent() {
     }
 
     public static void premain(String agentArgs, Instrumentation inst) {
         System.out.println("[ZMTOpt] javaagent premain (args=" + agentArgs + ")");
         asyncSaveEnabled = Boolean.getBoolean("zmtopt.asyncSave.enable");
-        inst.addTransformer(new ZMTOptTransformer(agentArgs, asyncSaveEnabled));
+        zombieAIHookEnabled = Boolean.getBoolean("zmtopt.zombieAI.hook");
+        inst.addTransformer(new ZMTOptTransformer(agentArgs, asyncSaveEnabled, zombieAIHookEnabled));
         initPlugin();
     }
 
@@ -154,5 +160,31 @@ public final class ZMTOptAgent {
         } finally {
             IN_ASYNC_WRITE.remove();
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Zombie AI hook scaffold (diagnostic)
+    // ------------------------------------------------------------------
+
+    public static void setZombieAIHookEnabled(boolean enabled) {
+        zombieAIHookEnabled = enabled;
+    }
+
+    public static boolean isZombieAIHookEnabled() {
+        return zombieAIHookEnabled;
+    }
+
+    /**
+     * Called from the injected {@code IsoZombie.update} methods when
+     * {@code -Dzmtopt.zombieAI.hook=true}. Currently diagnostic only: counts
+     * zombie AI updates. The next phase will consult
+     * {@code ZombieAISharder} to skip out-of-shard updates.
+     */
+    public static void onZombieUpdateTick() {
+        zombieUpdateCount.incrementAndGet();
+    }
+
+    public static long getZombieUpdateCount() {
+        return zombieUpdateCount.get();
     }
 }

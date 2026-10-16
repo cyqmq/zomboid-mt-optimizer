@@ -59,6 +59,7 @@ ZMTOpt.Config.ChunkIO = {
     Radius = 2,           -- -Dzmtopt.chunkIO.radius   (warmup radius in chunks)
     ChunkSize = 300,      -- -Dzmtopt.chunkIO.chunkSize (map chunk size in tiles)
     IntervalTicks = 40,   -- -Dzmtopt.chunkIO.intervalTicks
+    ByteCacheEntries = 256, -- ChunkReadCache LRU 上限（JVM 堆内字节缓存）
 }
 
 -- Zombie AI throttling (distance-based LOD for AI updates).
@@ -73,10 +74,13 @@ ZMTOpt.Config.ZombieFarIntervalTicks = 10  -- far zombies update every N ticks
 --   -Dzmtopt.zombieAI.closeRadius=15
 -- Distant zombies are divided into N shards; each tick only one shard's
 -- distant zombies get AI updates, smoothing per-tick load.
+-- Diagnostic hook (experimental, no behavior change):
+--   -Dzmtopt.zombieAI.hook=true   injects a counter into IsoZombie.update
 ZMTOpt.Config.ZombieAISharder = {
     Enable = true,   -- -Dzmtopt.zombieAI.enable
-    Shards = 4,      -- -Dzmtopt.zombieAI.shards
+    Shards = 4,    -- -Dzmtopt.zombieAI.shards
     CloseRadius = 15,-- -Dzmtopt.zombieAI.closeRadius
+    HookEnable = false, -- -Dzmtopt.zombieAI.hook (experimental diagnostic)
 }
 
 -- ------------------------------------------------------------------

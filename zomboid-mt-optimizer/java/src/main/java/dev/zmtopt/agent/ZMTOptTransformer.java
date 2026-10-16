@@ -42,6 +42,7 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
     private final Map<String, Set<String>> hooks = new LinkedHashMap<>();
     private final Set<String> watchClasses = new LinkedHashSet<>();
     private final boolean asyncSaveEnabled;
+    private final boolean zombieAIHookEnabled;
     private volatile boolean gameClassesNotified = false;
 
     /**
@@ -53,8 +54,9 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
      */
     private final boolean singlePortEnabled;
 
-    public ZMTOptTransformer(String args, boolean asyncSaveEnabled) {
+    public ZMTOptTransformer(String args, boolean asyncSaveEnabled, boolean zombieAIHookEnabled) {
         this.asyncSaveEnabled = asyncSaveEnabled;
+        this.zombieAIHookEnabled = zombieAIHookEnabled;
         this.singlePortEnabled = Boolean.getBoolean("zmtopt.singlePort.enable");
         parseArgs(args);
         if (hooks.isEmpty()) {
@@ -96,6 +98,14 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
                 return instrumentAsyncSave(classfileBuffer, className);
             } catch (Throwable t) {
                 System.err.println("[ZMTOpt] async-save instrumentation failed for " + className + ": " + t);
+                return null;
+            }
+        }
+        if (zombieAIHookEnabled && "zombie/characters/IsoZombie".equals(className)) {
+            try {
+                return instrumentZombieAIDiagnostic(classfileBuffer, className);
+            } catch (Throwable t) {
+                System.err.println("[ZMTOpt] zombie-AI instrumentation failed for " + className + ": " + t);
                 return null;
             }
         }
@@ -193,6 +203,41 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
                                 "onSafeWrite", "(IILjava/nio/ByteBuffer;)V", false);
                         visitInsn(Opcodes.RETURN);
                         visitLabel(fallthrough);
+                    }
+                };
+            }
+        };
+        reader.accept(visitor, ClassReader.SKIP_FRAMES);
+        return writer.toByteArray();
+    }
+
+    /**
+     * Diagnostic scaffold for wiring {@code ZombieAISharder} into the real
+     * game. When {@code -Dzmtopt.zombieAI.hook=true}, injects a call to
+     * {@code ZMTOptAgent.onZombieUpdateTick()} at the entry of every
+     * {@code IsoZombie.update} method. This only counts updates (no behavior
+     * change); the sharder-based skip logic is the next phase and should be
+     * validated on a running server first.
+     */
+    private byte[] instrumentZombieAIDiagnostic(byte[] classfileBuffer, String className) {
+        ClassReader reader = new ClassReader(classfileBuffer);
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
+        ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
+                if (!"update".equals(name)
+                        || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_STATIC | Opcodes.ACC_NATIVE)) != 0) {
+                    return mv;
+                }
+                System.out.println("[ZMTOpt] zombie-AI diagnostic hooking " + className + "#update" + descriptor);
+                return new MethodVisitor(Opcodes.ASM9, mv) {
+                    @Override
+                    public void visitCode() {
+                        super.visitCode();
+                        visitMethodInsn(Opcodes.INVOKESTATIC, AGENT_INTERNAL,
+                                "onZombieUpdateTick", "()V", false);
                     }
                 };
             }
