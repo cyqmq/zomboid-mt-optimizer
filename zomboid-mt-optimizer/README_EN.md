@@ -128,8 +128,9 @@ Lua-side settings mirror these in `42/media/lua/shared/ZMTOpt/ZMTOpt_Config.lua`
 ## Known limitations (verified on a real dedicated server)
 
 - ✅ Single-port / dual-end hooks / async save all inject successfully on the dedicated server (Build 42.21.0).
-- ⚠️ **Zombie AI shard-skip (`IsoZombie.update` injection) applies to client / single-player only.** On a dedicated server, the zombie simulation does NOT go through the Java class loader - the outer `zombie.characters.IsoZombie` class never reaches the transformer (even after a successful `createhorde`). Server zombies are likely managed by a native/virtual layer. The hook works in single-player where `IsoZombie` is loaded normally.
-- Server-side zombie AI parallelization would need to target the native simulation layer (`VirtualZombieManager`/`ZombiePopulationManager`) - a deeper engine-level effort.
+- ✅ **Server zombie simulation manager classes ARE reachable**: `zombie.popman.ZombiePopulationManager#updateRealZombies()` and `zombie.VirtualZombieManager#update()` are both injectable via javaagent (verified). This makes server-side zombie parallelization (phase 2) feasible - those two manager classes are the entry points.
+- ⚠️ The outer `zombie.characters.IsoZombie` class does NOT go through the transformer on the dedicated server (even after a successful `createhorde`), so `IsoZombie.update` injection applies to client / single-player only. Server zombie objects may live in a native/virtual layer, but the **manager logic is in Java** and can be targeted.
+- Phase 2 next step: analyze the iteration structure inside `updateRealZombies()` / `update()` and inject `ZombieAISharder`-based shard scheduling into the server zombie update loop.
 
 ## Needs verification on your machine
 

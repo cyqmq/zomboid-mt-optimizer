@@ -265,8 +265,9 @@ ZMTOpt.Config.LuaSlicePerTick = 4
 ## 已知边界（真实服务器实测结论）
 
 - ✅ **单端口 / 双端钩子 / 异步存档** 在专用服务器上均注入成功（Build 42.21.0 实测）。
-- ⚠️ **僵尸 AI 分片跳过（`IsoZombie.update` 注入）适用于客户端/单机端**：实测专用服务器的僵尸模拟**不走 Java 类加载**（`zombie.characters.IsoZombie` 外层类从未经过 transformer，即使 `createhorde` 成功生成僵尸——服务器僵尸可能由 native/虚拟层管理）。因此该钩子在专用服务器上不会触发，但在单机/客户端（`IsoWorld.update` 驱动、`IsoZombie` 正常加载）可用。
-- 若要服务端僵尸 AI 并行化，需要进入服务器 native 模拟层（`VirtualZombieManager`/`ZombiePopulationManager`），属于更深层的引擎级工程。
+- ✅ **服务端僵尸模拟管理类可达**：`zombie.popman.ZombiePopulationManager#updateRealZombies()` 和 `zombie.VirtualZombieManager#update()` **都能被 javaagent 注入**（实测）。这意味着服务端僵尸并行化（阶段 2）可行——入口是这两个管理类。
+- ⚠️ **`IsoZombie` 外层类在专用服务器上不经过 transformer**（即使 `createhorde` 成功），因此 `IsoZombie.update` 注入只适用于客户端/单机端。服务端僵尸对象可能由 native/虚拟层管理，但**管理逻辑在 Java 层**，可从管理类入手。
+- 阶段 2（服务端僵尸并行化）的下一步：分析 `updateRealZombies()`/`update()` 内部迭代结构，注入分片调度（`ZombieAISharder`）到服务端僵尸更新循环。
 
 ## 待你在真实环境验证
 

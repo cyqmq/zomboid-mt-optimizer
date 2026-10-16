@@ -44,6 +44,7 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
     private final boolean asyncSaveEnabled;
     private final boolean zombieAIHookEnabled;
     private final boolean zombieAISkipEnabled;
+    private final boolean serverZombieHookEnabled;
     private volatile boolean gameClassesNotified = false;
 
     /**
@@ -55,10 +56,11 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
      */
     private final boolean singlePortEnabled;
 
-    public ZMTOptTransformer(String args, boolean asyncSaveEnabled, boolean zombieAIHookEnabled, boolean zombieAISkipEnabled) {
+    public ZMTOptTransformer(String args, boolean asyncSaveEnabled, boolean zombieAIHookEnabled, boolean zombieAISkipEnabled, boolean serverZombieHookEnabled) {
         this.asyncSaveEnabled = asyncSaveEnabled;
         this.zombieAIHookEnabled = zombieAIHookEnabled;
         this.zombieAISkipEnabled = zombieAISkipEnabled;
+        this.serverZombieHookEnabled = serverZombieHookEnabled;
         this.singlePortEnabled = Boolean.getBoolean("zmtopt.singlePort.enable");
         parseArgs(args);
         if (hooks.isEmpty()) {
@@ -113,6 +115,14 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
                 return null;
             }
         }
+        if (serverZombieHookEnabled && isServerZombieClass(className)) {
+            try {
+                return instrumentServerZombieDiagnostic(classfileBuffer, className);
+            } catch (Throwable t) {
+                System.err.println("[ZMTOpt] server-zombie instrumentation failed for " + className + ": " + t);
+                return null;
+            }
+        }
         if (singlePortEnabled && isUdpEngine(className)) {
             try {
                 return instrumentSinglePort(classfileBuffer, className);
@@ -136,6 +146,48 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
     private static boolean isUdpEngine(String className) {
         return "zombie/core/raknet/UdpEngine".equals(className)
                 || "zombie/spnetwork/UdpEngine".equals(className);
+    }
+
+    private static boolean isServerZombieClass(String className) {
+        return "zombie/VirtualZombieManager".equals(className)
+                || "zombie/popman/ZombiePopulationManager".equals(className);
+    }
+
+    /**
+     * Diagnostic hook for the server-side zombie simulation (phase 2 starter).
+     * When {@code -Dzmtopt.serverZombie.hook=true}, injects
+     * {@code ZMTOptAgent.onServerZombieTick()} into
+     * {@code VirtualZombieManager.update()} and
+     * {@code ZombiePopulationManager.updateRealZombies()}. This proves whether
+     * the server's zombie simulation is reachable via the Java classloader.
+     */
+    private byte[] instrumentServerZombieDiagnostic(byte[] classfileBuffer, String className) {
+        ClassReader reader = new ClassReader(classfileBuffer);
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
+        ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
+                boolean target = "zombie/VirtualZombieManager".equals(className)
+                        ? "update".equals(name)
+                        : "updateRealZombies".equals(name);
+                if (!target || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_STATIC | Opcodes.ACC_NATIVE)) != 0) {
+                    return mv;
+                }
+                System.out.println("[ZMTOpt] server-zombie diagnostic hooking " + className + "#" + name + descriptor);
+                return new MethodVisitor(Opcodes.ASM9, mv) {
+                    @Override
+                    public void visitCode() {
+                        super.visitCode();
+                        visitMethodInsn(Opcodes.INVOKESTATIC, AGENT_INTERNAL,
+                                "onServerZombieTick", "()V", false);
+                    }
+                };
+            }
+        };
+        reader.accept(visitor, ClassReader.SKIP_FRAMES);
+        return writer.toByteArray();
     }
 
     private byte[] instrument(byte[] classfileBuffer, String className, Set<String> methodsToHook) {

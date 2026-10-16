@@ -54,6 +54,10 @@ public final class ZMTOptAgent {
     private static volatile Method getPlayerXMethod;
     private static volatile Method getPlayerYMethod;
 
+    // Server-side zombie simulation diagnostic (phase 2 starter).
+    private static final AtomicLong serverZombieTickCount = new AtomicLong();
+    private static volatile boolean serverZombieHookEnabled = false;
+
     private ZMTOptAgent() {
     }
 
@@ -62,7 +66,8 @@ public final class ZMTOptAgent {
         asyncSaveEnabled = Boolean.getBoolean("zmtopt.asyncSave.enable");
         zombieAIHookEnabled = Boolean.getBoolean("zmtopt.zombieAI.hook");
         zombieAISkipEnabled = Boolean.getBoolean("zmtopt.zombieAI.skip");
-        inst.addTransformer(new ZMTOptTransformer(agentArgs, asyncSaveEnabled, zombieAIHookEnabled, zombieAISkipEnabled));
+        serverZombieHookEnabled = Boolean.getBoolean("zmtopt.serverZombie.hook");
+        inst.addTransformer(new ZMTOptTransformer(agentArgs, asyncSaveEnabled, zombieAIHookEnabled, zombieAISkipEnabled, serverZombieHookEnabled));
         initPlugin();
     }
 
@@ -198,6 +203,33 @@ public final class ZMTOptAgent {
 
     public static long getZombieUpdateCount() {
         return zombieUpdateCount.get();
+    }
+
+    // ------------------------------------------------------------------
+    // Server-side zombie simulation diagnostic (phase 2 starter)
+    // ------------------------------------------------------------------
+
+    public static void setServerZombieHookEnabled(boolean enabled) {
+        serverZombieHookEnabled = enabled;
+    }
+
+    public static boolean isServerZombieHookEnabled() {
+        return serverZombieHookEnabled;
+    }
+
+    /**
+     * Called from the injected {@code VirtualZombieManager.update()} /
+     * {@code ZombiePopulationManager.updateRealZombies()} entries when
+     * {@code -Dzmtopt.serverZombie.hook=true}. Diagnostic only: counts
+     * server-side zombie simulation ticks. This proves whether the server's
+     * native/virtual zombie layer is reachable via the Java classloader.
+     */
+    public static void onServerZombieTick() {
+        serverZombieTickCount.incrementAndGet();
+    }
+
+    public static long getServerZombieTickCount() {
+        return serverZombieTickCount.get();
     }
 
     public static void setZombieAISkipEnabled(boolean enabled) {
