@@ -252,6 +252,7 @@ ZMTOpt.Config.LuaSlicePerTick = 4
 - ✅ **僵尸 AI 分片测试**：8 只远处僵尸 / 4 片 → 每 tick 恰好 2 只更新（负载均衡），近处僵尸每 tick 模拟，4 tick 内全部远处僵尸得到更新
 - ✅ **JUnit 测试套件**：覆盖线程池优先级、主线程分发、Tick 调度、存档卸载、僵尸节流/分片、I/O 池背压、区块字节缓存、性能监控
 - ✅ **僵尸 AI 分片跳过字节码注入测试**：`-Dzmtopt.zombieAI.skip=true` 下 8 只僵尸 / 4 片 → 每 tick 恰好 2 只执行 `update()`，其余被注入的跳过逻辑拦截
+- ✅ **异步存档真机验证**：真实服务器上 `async-save: hooking zombie/iso/IsoChunk#SafeWrite` 注入成功，控制台 `save` 命令执行完成（`World saved`，`SaveAll took 136ms`），无 mod 相关错误
 - ✅ **GitHub Actions CI**：`.github/workflows/ci.yml` 自动构建 + 测试
 - ✅ **真实专用服务器完整启动**（SteamCMD 匿名下载 App 380870，Build 42.21.0，**3g 堆**）：
   - agent `premain` 加载、插件初始化、区块 I/O + 僵尸分片就绪
