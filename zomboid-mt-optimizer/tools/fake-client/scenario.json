@@ -1,0 +1,48 @@
+{
+  "version": "1.0",
+  "config": {
+    "client": {
+      "connection": {
+        "serverHost": "127.0.0.1",
+        "serverPort": 16261,
+        "interval": 1000,
+        "timeout": 10000,
+        "delay": 100
+      },
+      "statistics": {
+        "period": 1000,
+        "id": -1
+      }
+    },
+    "player": {
+      "fps": 60,
+      "predict": 1,
+      "voip": false
+    },
+    "movement": {
+      "radius": 10,
+      "motion": {
+        "aim": 1,
+        "sneak": 2,
+        "sneakrun": 3,
+        "walk": 5,
+        "run": 10,
+        "sprint": 15,
+        "pedestrian": { "min": 3, "max": 5 },
+        "vehicle": { "min": 20, "max": 30 }
+      }
+    }
+  },
+  "movements": [
+    {
+      "id": 0,
+      "description": "ZMTOpt test bot",
+      "spawn": { "x": 6000, "y": 6000 },
+      "motion": "Walk",
+      "speed": 5,
+      "type": "Line",
+      "radius": 10,
+      "ghost": false
+    }
+  ]
+}
