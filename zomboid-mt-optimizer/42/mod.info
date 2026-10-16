@@ -1,0 +1,4 @@
+id=ZMTOpt
+name=Zomboid MT Optimizer
+description=Server-side multithreading optimization for Project Zomboid Build 42. Offloads save serialization, chunk data preparation and zombie AI throttling to background threads via Faded Java Loader (FJL). Includes a Lua time-slicing fallback that works without the Java layer.
+poster=poster.png
