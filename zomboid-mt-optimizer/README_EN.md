@@ -32,7 +32,8 @@ FJL (Faded Java Loader) and ZombieBuddy are closed-source frameworks with unpubl
 | **Chunk byte cache** | background pre-read into a bounded JVM-heap cache (`ChunkReadCache`) | `-Dzmtopt.chunkIO.*` |
 | **Async chunk save** | `IsoChunk.SafeWrite` disk I/O offloaded to a worker pool (C2ME-style) | `-Dzmtopt.asyncSave.enable=true` (experimental) |
 | **Zombie AI sharding** | distant zombies split into N shards, one shard updated per tick (frame-time distribution) | `-Dzmtopt.zombieAI.shards=4` |
-| **Zombie AI shard-skip** | injects real skip logic into `IsoZombie.update`; out-of-shard distant zombies are skipped (experimental) | `-Dzmtopt.zombieAI.skip=true` (experimental) |
+| **Zombie AI shard-skip** | injects real skip logic into `IsoZombie.update`; out-of-shard distant zombies are skipped (experimental, client/single-player) | `-Dzmtopt.zombieAI.skip=true` (experimental) |
+| **Server zombie load-adaptive throttle** | injects a skip guard into `ZombiePopulationManager.updateRealZombies()`; skips some native zombie updates when the server tick is overloaded | `-Dzmtopt.serverZombie.throttle=true` (experimental) |
 | **Zombie AI hook scaffold** | diagnostic counter injected into `IsoZombie.update` (no behavior change) | `-Dzmtopt.zombieAI.hook=true` (experimental) |
 | **Single-port** | forces `udpPort = port` in `UdpEngine.<init>`, merging 16261+16262 into one | `-Dzmtopt.singlePort.enable=true` |
 
@@ -107,6 +108,8 @@ server is listening on port 16261
 | `zmtopt.zombieAI.closeRadius` | `15` | close radius (always simulate) |
 | `zmtopt.zombieAI.hook` | `false` | zombie AI diagnostic hook (experimental) |
 | `zmtopt.zombieAI.skip` | `false` | zombie AI shard-skip (experimental) |
+| `zmtopt.serverZombie.throttle` | `false` | server zombie load-adaptive throttle (experimental) |
+| `zmtopt.serverZombie.thresholdMs` | `50.0` | overload threshold in ms for the server zombie throttle |
 | `zmtopt.singlePort.enable` | `false` | merge two UDP ports into one |
 
 Lua-side settings mirror these in `42/media/lua/shared/ZMTOpt/ZMTOpt_Config.lua`.
@@ -115,7 +118,8 @@ Lua-side settings mirror these in `42/media/lua/shared/ZMTOpt/ZMTOpt_Config.lua`
 
 ## Verification status
 
-- ✅ Compiled with `--release 17`; full JUnit test suite passes
+- ✅ Compiled with `--release 17`; full JUnit test suite passes (24 tests, incl. `ServerZombieThrottleTest` three states)
+- ✅ **Server zombie throttle real-server verification**: `server-zombie throttle hooking zombie/popman/ZombiePopulationManager#updateRealZombies()V` injected; server started (`SERVER STARTED`, single port 16261)
 - ✅ **Zombie AI shard-skip bytecode test**: with `-Dzmtopt.zombieAI.skip=true`, 8 zombies / 4 shards → exactly 2 `update()` calls per tick, others intercepted by injected skip logic
 - ✅ **GitHub Actions CI** workflow (`.github/workflows/ci.yml`) builds the agent jar and runs tests on push
 - ✅ **Real dedicated server test** (SteamCMD anonymous download, App 380870, Build 42.21.0, 3 GB heap):

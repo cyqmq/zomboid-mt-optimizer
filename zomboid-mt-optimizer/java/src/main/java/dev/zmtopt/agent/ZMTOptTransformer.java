@@ -45,6 +45,7 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
     private final boolean zombieAIHookEnabled;
     private final boolean zombieAISkipEnabled;
     private final boolean serverZombieHookEnabled;
+    private final boolean serverZombieThrottleEnabled;
     private volatile boolean gameClassesNotified = false;
 
     /**
@@ -56,11 +57,12 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
      */
     private final boolean singlePortEnabled;
 
-    public ZMTOptTransformer(String args, boolean asyncSaveEnabled, boolean zombieAIHookEnabled, boolean zombieAISkipEnabled, boolean serverZombieHookEnabled) {
+    public ZMTOptTransformer(String args, boolean asyncSaveEnabled, boolean zombieAIHookEnabled, boolean zombieAISkipEnabled, boolean serverZombieHookEnabled, boolean serverZombieThrottleEnabled) {
         this.asyncSaveEnabled = asyncSaveEnabled;
         this.zombieAIHookEnabled = zombieAIHookEnabled;
         this.zombieAISkipEnabled = zombieAISkipEnabled;
         this.serverZombieHookEnabled = serverZombieHookEnabled;
+        this.serverZombieThrottleEnabled = serverZombieThrottleEnabled;
         this.singlePortEnabled = Boolean.getBoolean("zmtopt.singlePort.enable");
         parseArgs(args);
         if (hooks.isEmpty()) {
@@ -115,9 +117,11 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
                 return null;
             }
         }
-        if (serverZombieHookEnabled && isServerZombieClass(className)) {
+        if ((serverZombieHookEnabled || serverZombieThrottleEnabled) && isServerZombieClass(className)) {
             try {
-                return instrumentServerZombieDiagnostic(classfileBuffer, className);
+                return serverZombieThrottleEnabled
+                        ? instrumentServerZombieThrottle(classfileBuffer, className)
+                        : instrumentServerZombieDiagnostic(classfileBuffer, className);
             } catch (Throwable t) {
                 System.err.println("[ZMTOpt] server-zombie instrumentation failed for " + className + ": " + t);
                 return null;
@@ -344,6 +348,47 @@ public final class ZMTOptTransformer implements java.lang.instrument.ClassFileTr
                         // if (!shouldSkipZombieUpdate(id, x, y)) continue
                         visitMethodInsn(Opcodes.INVOKESTATIC, AGENT_INTERNAL,
                                 "shouldSkipZombieUpdate", "(IFF)Z", false);
+                        visitJumpInsn(Opcodes.IFEQ, continueUpdate);
+                        visitInsn(Opcodes.RETURN);
+                        visitLabel(continueUpdate);
+                    }
+                };
+            }
+        };
+        reader.accept(visitor, ClassReader.SKIP_FRAMES);
+        return writer.toByteArray();
+    }
+
+    /**
+     * Load-adaptive throttle for the server's native zombie simulation.
+     * When {@code -Dzmtopt.serverZombie.throttle=true}, injects:
+     * <pre>
+     *   if (ZMTOptAgent.shouldSkipServerZombieUpdate()) return;
+     * </pre>
+     * at the entry of {@code ZombiePopulationManager.updateRealZombies()}.
+     * The native AI update is skipped when the server is overloaded.
+     */
+    private byte[] instrumentServerZombieThrottle(byte[] classfileBuffer, String className) {
+        ClassReader reader = new ClassReader(classfileBuffer);
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
+        ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
+                boolean target = "zombie/popman/ZombiePopulationManager".equals(className)
+                        && "updateRealZombies".equals(name);
+                if (!target || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_STATIC | Opcodes.ACC_NATIVE)) != 0) {
+                    return mv;
+                }
+                System.out.println("[ZMTOpt] server-zombie throttle hooking " + className + "#" + name + descriptor);
+                return new MethodVisitor(Opcodes.ASM9, mv) {
+                    @Override
+                    public void visitCode() {
+                        super.visitCode();
+                        Label continueUpdate = new Label();
+                        visitMethodInsn(Opcodes.INVOKESTATIC, AGENT_INTERNAL,
+                                "shouldSkipServerZombieUpdate", "()Z", false);
                         visitJumpInsn(Opcodes.IFEQ, continueUpdate);
                         visitInsn(Opcodes.RETURN);
                         visitLabel(continueUpdate);

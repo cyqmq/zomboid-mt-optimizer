@@ -70,4 +70,12 @@ public final class ServerPerfMonitor {
         }
         return (copy[mid - 1] + copy[mid]) / 2.0;
     }
+
+    /** Resets all recorded timings (used by tests and server restart flows). */
+    public void reset() {
+        Arrays.fill(tickTimesMs, 0L);
+        cursor.set(0);
+        maxTickMs.set(0);
+        lastTickMs = 0.0;
+    }
 }

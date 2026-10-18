@@ -58,6 +58,11 @@ public final class ZMTOptAgent {
     private static final AtomicLong serverZombieTickCount = new AtomicLong();
     private static volatile boolean serverZombieHookEnabled = false;
 
+    // Server-side load-adaptive zombie AI throttling (phase 2).
+    private static volatile boolean serverZombieThrottleEnabled = false;
+    private static volatile double serverZombieThrottleThresholdMs = 50.0;
+    private static volatile long serverZombieSkipCounter = 0;
+
     private ZMTOptAgent() {
     }
 
@@ -67,7 +72,12 @@ public final class ZMTOptAgent {
         zombieAIHookEnabled = Boolean.getBoolean("zmtopt.zombieAI.hook");
         zombieAISkipEnabled = Boolean.getBoolean("zmtopt.zombieAI.skip");
         serverZombieHookEnabled = Boolean.getBoolean("zmtopt.serverZombie.hook");
-        inst.addTransformer(new ZMTOptTransformer(agentArgs, asyncSaveEnabled, zombieAIHookEnabled, zombieAISkipEnabled, serverZombieHookEnabled));
+        serverZombieThrottleEnabled = Boolean.getBoolean("zmtopt.serverZombie.throttle");
+        serverZombieThrottleThresholdMs = Double.parseDouble(
+                System.getProperty("zmtopt.serverZombie.thresholdMs", "50.0"));
+        inst.addTransformer(new ZMTOptTransformer(agentArgs,
+                asyncSaveEnabled, zombieAIHookEnabled, zombieAISkipEnabled,
+                serverZombieHookEnabled, serverZombieThrottleEnabled));
         initPlugin();
     }
 
@@ -230,6 +240,46 @@ public final class ZMTOptAgent {
 
     public static long getServerZombieTickCount() {
         return serverZombieTickCount.get();
+    }
+
+    public static void setServerZombieThrottleEnabled(boolean enabled) {
+        serverZombieThrottleEnabled = enabled;
+    }
+
+    public static boolean isServerZombieThrottleEnabled() {
+        return serverZombieThrottleEnabled;
+    }
+
+    public static void setServerZombieThrottleThresholdMs(double ms) {
+        serverZombieThrottleThresholdMs = Math.max(1.0, ms);
+    }
+
+    /**
+     * Load-adaptive throttling for the server's native zombie simulation.
+     * Called from the injected {@code ZombiePopulationManager.updateRealZombies()}
+     * entry when {@code -Dzmtopt.serverZombie.throttle=true}.
+     *
+     * <p>Returns true when the native update should be SKIPPED this tick:
+     * <ul>
+     *   <li>if throttling is disabled - never skip;</li>
+     *   <li>if the server's average tick time is below the threshold - never skip;</li>
+     *   <li>when overloaded, skip every other update to let the simulation catch up.</li>
+     * </ul>
+     */
+    public static boolean shouldSkipServerZombieUpdate() {
+        if (!serverZombieThrottleEnabled) {
+            return false;
+        }
+        try {
+            double avgTickMs = FJLPlugin.getPerfMonitor().getAverageTickMs();
+            if (avgTickMs < serverZombieThrottleThresholdMs) {
+                return false;
+            }
+            // Overloaded: skip at most every other update (50% duty cycle).
+            return (serverZombieSkipCounter++ & 1L) == 0L;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     public static void setZombieAISkipEnabled(boolean enabled) {

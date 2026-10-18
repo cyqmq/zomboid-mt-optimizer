@@ -10,7 +10,8 @@
 - **区块字节缓存**：后台预读区块文件原始字节到 JVM 堆内缓存（LRU 有界），供加载器直接消费
 - **异步区块存档（C2ME 式多线程）**：`IsoChunk.SafeWrite` 磁盘写从主线程卸载到 I/O 线程池，消除存档卡顿
 - **僵尸 AI 分片调度（帧时间分配）**：远处僵尸按 id 分片，每 tick 只更新一片，平滑 AI 负载
-- **僵尸 AI 分片跳过（真机注入）**：`-Dzmtopt.zombieAI.skip=true` 时在 `IsoZombie.update` 入口注入跳过逻辑，远处僵尸只在所属分片激活时更新
+- **僵尸 AI 分片跳过（真机注入）**：`-Dzmtopt.zombieAI.skip=true` 时在 `IsoZombie.update` 入口注入跳过逻辑，远处僵尸只在所属分片激活时更新（客户端/单机端）
+- **服务端僵尸 AI 负载自适应节流**：`-Dzmtopt.serverZombie.throttle=true` 时在 `ZombiePopulationManager.updateRealZombies()` 入口注入跳过守卫，服务器 tick 过载时自动跳过部分 native 僵尸更新（优雅降级）
 - **僵尸 AI 钩子脚手架**：可选的 `IsoZombie.update` 诊断计数注入（默认关，行为不变）
 - **单端口优化**：字节码注入强制 `udpPort = port`，服务端两个 UDP 端口（16261+16262）合并为一个
 - **GitHub Actions CI**：推送自动跑 JUnit 测试 + 构建 agent jar
@@ -202,6 +203,15 @@ PZ 专用服务器默认使用两个 UDP 端口：`16261`（Steam 连接）和 `
 -Dzmtopt.zombieAI.skip=true   # 实验性：真正跳过非本片远处僵尸的 AI 更新
 ```
 
+### 服务端僵尸 AI 负载自适应节流（JVM 系统属性，实验性）
+
+在 `ZombiePopulationManager.updateRealZombies()` 入口注入跳过守卫：当服务器平均 tick 超过阈值（过载）时，自动跳过部分 native 僵尸更新（50% 占空比），让模拟追赶进度；健康时完全跳过不生效：
+
+```
+-Dzmtopt.serverZombie.throttle=true   # 启用
+-Dzmtopt.serverZombie.thresholdMs=50.0  # 过载阈值（毫秒），默认 50
+```
+
 ### 区块 I/O 配置（JVM 系统属性）
 
 Java 层无法直接读 Lua 配置，区块 I/O 参数通过 `-D` 系统属性设置（加在 `-javaagent` 同一行）：
@@ -253,6 +263,8 @@ ZMTOpt.Config.LuaSlicePerTick = 4
 - ✅ **JUnit 测试套件**：覆盖线程池优先级、主线程分发、Tick 调度、存档卸载、僵尸节流/分片、I/O 池背压、区块字节缓存、性能监控
 - ✅ **僵尸 AI 分片跳过字节码注入测试**：`-Dzmtopt.zombieAI.skip=true` 下 8 只僵尸 / 4 片 → 每 tick 恰好 2 只执行 `update()`，其余被注入的跳过逻辑拦截
 - ✅ **异步存档真机验证**：真实服务器上 `async-save: hooking zombie/iso/IsoChunk#SafeWrite` 注入成功，控制台 `save` 命令执行完成（`World saved`，`SaveAll took 136ms`），无 mod 相关错误
+- ✅ **服务端僵尸节流真机验证**：`server-zombie throttle hooking zombie/popman/ZombiePopulationManager#updateRealZombies()V` 注入成功，服务器完整启动（`SERVER STARTED`，单端口 16261）
+- ✅ **JUnit 测试**：24 个全部通过（含 `ServerZombieThrottleTest` 过载/健康/禁用三态）
 - ✅ **GitHub Actions CI**：`.github/workflows/ci.yml` 自动构建 + 测试
 - ✅ **真实专用服务器完整启动**（SteamCMD 匿名下载 App 380870，Build 42.21.0，**3g 堆**）：
   - agent `premain` 加载、插件初始化、区块 I/O + 僵尸分片就绪
