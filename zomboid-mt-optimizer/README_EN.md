@@ -110,6 +110,8 @@ server is listening on port 16261
 | `zmtopt.zombieAI.skip` | `false` | zombie AI shard-skip (experimental) |
 | `zmtopt.serverZombie.throttle` | `false` | server zombie load-adaptive throttle (experimental) |
 | `zmtopt.serverZombie.thresholdMs` | `50.0` | overload threshold in ms for the server zombie throttle |
+| `zmtopt.stats.enable` | `true` | periodic stats line logging |
+| `zmtopt.stats.intervalMs` | `60000` | stats logging interval in ms |
 | `zmtopt.singlePort.enable` | `false` | merge two UDP ports into one |
 
 Lua-side settings mirror these in `42/media/lua/shared/ZMTOpt/ZMTOpt_Config.lua`.

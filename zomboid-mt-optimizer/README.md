@@ -212,6 +212,17 @@ PZ 专用服务器默认使用两个 UDP 端口：`16261`（Steam 连接）和 `
 -Dzmtopt.serverZombie.thresholdMs=50.0  # 过载阈值（毫秒），默认 50
 ```
 
+### 周期性统计日志（JVM 系统属性）
+
+控制台每 60 秒输出一行各优化模块计数，方便观察效果：
+
+```
+-Dzmtopt.stats.enable=true       # 默认 true
+-Dzmtopt.stats.intervalMs=60000  # 输出间隔（毫秒），默认 60000
+```
+
+示例输出：`[ZMTOpt-stats] saveOffloads=12 chunkCacheHits=340 misses=2 warmedFiles=128 shardedZombies=0 serverZombieTicks=4823 avgTickMs=18.2`
+
 ### 区块 I/O 配置（JVM 系统属性）
 
 Java 层无法直接读 Lua 配置，区块 I/O 参数通过 `-D` 系统属性设置（加在 `-javaagent` 同一行）：

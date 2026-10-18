@@ -1,5 +1,6 @@
 package dev.zmtopt.bridge;
 
+import dev.zmtopt.agent.ZMTOptAgent;
 import dev.zmtopt.core.MTThreadPool;
 import dev.zmtopt.core.MainThreadDispatcher;
 import dev.zmtopt.core.TickScheduler;
@@ -13,6 +14,7 @@ import dev.zmtopt.optimize.ZombieAIThrottler;
 import dev.zmtopt.optimize.ZombieAISharder;
 
 import java.nio.ByteBuffer;
+import java.util.Locale;
 
 /**
  * Entry point of the Zomboid MT Optimizer Java layer.
@@ -41,6 +43,11 @@ public final class FJLPlugin {
     private static ChunkReadCache chunkReadCache;
     private static ZombieAISharder zombieAISharder;
 
+    // Periodic stats logging.
+    private static volatile boolean statsEnabled = true;
+    private static volatile long statsIntervalMs = 60_000L;
+    private static volatile long lastStatsLogTime = 0L;
+
     private FJLPlugin() {
     }
 
@@ -67,6 +74,9 @@ public final class FJLPlugin {
 
         initChunkIO();
         initZombieAISharder();
+
+        statsEnabled = Boolean.parseBoolean(System.getProperty("zmtopt.stats.enable", "true"));
+        statsIntervalMs = Long.getLong("zmtopt.stats.intervalMs", 60_000L);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             if (chunkIOPool != null) {
@@ -148,6 +158,34 @@ public final class FJLPlugin {
             chunkReadWarmup.onTick(currentTick);
         }
         perfMonitor.recordTick((System.nanoTime() - tickStart) / 1_000_000.0);
+        maybeLogStats(currentTick);
+    }
+
+    /** Periodically prints a one-line summary of all optimizer counters. */
+    private static void maybeLogStats(long now) {
+        if (!statsEnabled || now - lastStatsLogTime < statsIntervalMs) {
+            return;
+        }
+        lastStatsLogTime = now;
+        StringBuilder sb = new StringBuilder("[ZMTOpt-stats]");
+        if (saveOffload != null) {
+            sb.append(" saveOffloads=").append(saveOffload.getOffloadCount());
+        }
+        if (chunkReadCache != null) {
+            sb.append(" chunkCacheHits=").append(chunkReadCache.getHits())
+              .append(" misses=").append(chunkReadCache.getMisses());
+        }
+        if (chunkReadWarmup != null) {
+            sb.append(" warmedFiles=").append(chunkReadWarmup.getWarmedFiles());
+        }
+        if (zombieAISharder != null) {
+            sb.append(" shardedZombies=").append(zombieAISharder.size());
+        }
+        sb.append(" serverZombieTicks=").append(ZMTOptAgent.getServerZombieTickCount());
+        if (perfMonitor != null) {
+            sb.append(" avgTickMs=").append(String.format(Locale.ROOT, "%.1f", perfMonitor.getAverageTickMs()));
+        }
+        GameHooks.log(sb.toString());
     }
 
     /**
