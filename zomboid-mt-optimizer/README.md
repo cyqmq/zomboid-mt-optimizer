@@ -275,6 +275,7 @@ ZMTOpt.Config.LuaSlicePerTick = 4
 - ✅ **僵尸 AI 分片跳过字节码注入测试**：`-Dzmtopt.zombieAI.skip=true` 下 8 只僵尸 / 4 片 → 每 tick 恰好 2 只执行 `update()`，其余被注入的跳过逻辑拦截
 - ✅ **异步存档真机验证**：真实服务器上 `async-save: hooking zombie/iso/IsoChunk#SafeWrite` 注入成功，控制台 `save` 命令执行完成（`World saved`，`SaveAll took 136ms`），无 mod 相关错误
 - ✅ **服务端僵尸节流真机验证**：`server-zombie throttle hooking zombie/popman/ZombiePopulationManager#updateRealZombies()V` 注入成功，服务器完整启动（`SERVER STARTED`，单端口 16261）
+- ✅ **统计日志真机验证**：`[ZMTOpt-stats] saveOffloads=0 chunkCacheHits=0 misses=0 warmedFiles=0 shardedZombies=0 serverZombieTicks=0 avgTickMs=3.0` 每 60 秒输出一次
 - ✅ **JUnit 测试**：24 个全部通过（含 `ServerZombieThrottleTest` 过载/健康/禁用三态）
 - ✅ **GitHub Actions CI**：`.github/workflows/ci.yml` 自动构建 + 测试
 - ✅ **真实专用服务器完整启动**（SteamCMD 匿名下载 App 380870，Build 42.21.0，**3g 堆**）：
